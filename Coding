@@ -1,0 +1,71 @@
+################################################################################
+# Introduction to Data Science
+# EDUC 423
+# Project
+# Luis Grochocki, Gabriela Gavrila, David Song
+###################################################################
+
+
+###############################################################################
+# Set up
+################################################################################
+
+setwd("/Users/grochocki/Data Science/Project")
+
+library(tidyverse)
+library(RColorBrewer)
+
+
+#Opening/Merging files
+
+#Creating multmerge function
+multmerge = function(mypath){
+  filenames=list.files(path=mypath, full.names=TRUE)
+  datalist = lapply(filenames, function(x){read.csv(file=x,header=T,stringsAsFactors=FALSE)})
+  Reduce(function(x,y) {merge(x,y, all=TRUE)}, datalist)
+}
+
+#Merging files (2000-2005) - period was selected based on availability of data on earnings
+project <- multmerge("/Users/grochocki/Data Science/Project/college_scorecard_files")
+
+#Checking for problems 
+problems(project) #no more problems
+
+select_project <- select(project,
+                         OPEID, #inst id
+                         ALIAS, #inst acronym
+                         INSTNM, #inst name
+                         CITY,
+                         STABBR,
+                         LATITUDE,
+                         LONGITUDE,
+                         MAIN, #main campus (dummy main=1, not=0)
+                         ICLEVEL, #inst level (cat. 4+ years = 1, 2-3 years = 2, <2 = 3, NA = -3)
+                         CONTROL, #inst level (cat. public = 1, priv nonprof = 2, priv forprof = 3, NA = -3)
+                         HBCU, #categorical (yes = 1, no= 2)
+                         PBI, #predom black
+                         ANNHI, #alaska/hawaii
+                         TRIBAL, #tribal
+                         AANAPII, #Asian/native American
+                         HSI, #hispanic
+                         NANTI, #native american non tribal
+                         TUITFTE, #tuition revenue per student
+                         AVGFACSAL, #average faculty salary
+                         ADM_RATE, #adm rate per campus
+                         TUITIONFEE_IN, #tuition in-state
+                         TUITIONFEE_OUT, #tuition out-state
+                         MARRIED, #share of stud
+                         VETERAN, #share of stud
+                         FIRST_GEN, #share of stud
+                         FAMINC, #aver fam income
+                         FAMINC_IND, #aver ind income
+                         PCT_WHITE,
+                         PCT_BLACK,
+                         PCT_ASIAN,
+                         PCT_HISPANIC,
+                         PCT_BORN_US, #nationality (dummy)
+                         POVERTY_RATE,
+                         UNEMP_RATE,
+                         MN_EARN_WNE_P6, #mean earning year 6 (up to 10)
+                         MN_EARN_WNE_MALE0_P6, #female mean earning year 6
+                         MN_EARN_WNE_MALE1_P6) #male mean earning year 6
