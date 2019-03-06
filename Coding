@@ -29,15 +29,15 @@ multmerge = function(mypath){
   Reduce(function(x,y) {merge(x,y, all=TRUE)}, datalist)
 }
 
-#Merging files (1996-2015) - period was selected based on availability of data on earnings
-project <- multmerge("/Users/grochocki/Data Science/Project/college_scorecard_files")
+#Merging files (academic year 2012-2013) - period was selected based on most recent available data on earnings
+scorecard <- multmerge("/Users/grochocki/Data Science/Project/college_scorecard_files")
 
 #Selecting the variables which will allow to merge the variable earnings to other datasets
 
-select_project <- select(project,
+select_project <- select(scorecard,
                          UNITID,# Inst id
                          CITY,
-                         MN_EARN_WNE_P6) #mean earning year 6 (up to 10)
+                         MN_EARN_WNE_P6) #mean earning year 6
 
 
 #########################################################################
@@ -49,7 +49,7 @@ cleanearnings2 <- cleanearnings1[cleanearnings1$MN_EARN_WNE_P6 != "PrivacySuppre
 
 #########################################################################
 # Creating new variable with the average college earnings (MN_EARN_WNE_P6) 
-# from 1996-2015 by campus site (UNITID)
+# for the academic year of 2012-2013 by campus site (UNITID)
 #########################################################################
 
 cleanearnings2$MN_EARN_WNE_P6 = as.numeric(as.character(cleanearnings2$MN_EARN_WNE_P6))
@@ -64,12 +64,116 @@ mean_earnings <- cleanearnings2 %>%
 ################################################################################
 
 #Opening ipeds dataset
-ipeds <- read_csv("ipeds.csv")
+ipeds <- read_csv("2016_ipeds.csv")
 
 #Merging files (mean_earnings)
 colleges <- mean_earnings %>%
   inner_join(ipeds, by = c("UNITID" = "UnitID"))
+
+#saving new csv file with the variables we are going to work with
+write.csv(colleges,'colleges.csv')
+
   
 ###############################################################################
-# Merge with IPEDS database variables
+# Renaming columns
 ################################################################################
+
+colnames(colleges) <- c("UNITID",
+                          "avrg_earnings",
+                          "inst_name",
+                          "zip",
+                          "state",
+                          "city",
+                          "street",
+                          "latitude",
+                          "longitude",
+                          "inst_type",
+                          "land_grant",
+                          "hbcu",
+                          "grad_offer",
+                          "med_degree",
+                          "hospital",
+                          "urban",
+                          "suburban",
+                          "town",
+                          "rural",
+                          "avrg_net_price",
+                          "pct_f_aid",
+                          "n_phd_degree",
+                          "n_mast_degree",
+                          "n_bach_degree",
+                          "n_assoc_degree",
+                          "inst_size",
+                          "inst_sector",
+                          "pct_admit",
+                          "tot_admit",
+                          "in_state_tuition_fees",
+                          "out_state_tuition_fees",
+                          "in_state_tuition",
+                          "out_state_tuition",
+                          "tuition_plans",
+                          "in_state_tuition_fees_room",
+                          "out_state_tuition_fees_room")
+
+###############################################################################
+# Getting geocode data
+################################################################################
+
+library(maps)
+library(ggplot2)
+library(ggmap)
+library(geosphere)
+library(mapproj)
+library(sp)
+library(rgdal)
+
+# Registering google API
+register_google(key = "AIzaSyAUU86MvAe9Q6xth24vPPT-zlunTtrgdKA", write = TRUE)
+
+# Plotting USA map
+usa <- get_map(location = "united states", zoom = 4, maptype = "terrain",
+             source = "google", color = "color")
+
+ggmap(usa)
+
+# Extracting information from geocode
+
+ipeds_geo <- colleges %>%
+  mutate(address = paste(state, city, zip, sep = " ")) %>%
+  mutate_geocode(address) %>%
+  select(inst_name, address, longitude, latitude, lon, lat, avrg_earnings, inst_type,
+         land_grant, hbcu, grad_offer, med_degree, hospital, urban, suburban, town,
+         rural, avrg_net_price, pct_f_aid, n_phd_degree, n_mast_degree, n_bach_degree,
+         n_assoc_degree, inst_size, inst_sector, pct_admit, tot_admit, in_state_tuition_fees,
+         out_state_tuition_fees, in_state_tuition, out_state_tuition, tuition_plans,
+         in_state_tuition_fees_room, out_state_tuition_fees_room)
+
+#saving new csv file with geocode data
+write.csv(ipeds_geo,'ipeds_geo.csv')
+
+# We have to work on the spatial coding, I got stuck
+ggplot() + 
+  geom_polygon(data = ipeds_geo, aes(x=lon, y=lat, group=group, fill=avrg_earnings), 
+               col="white", size=0.2, alpha=.5) + 
+  geom_path(data = ipeds_geo,  aes(x=lon, y=lat, group=group), colour = "gray15", size=.3) + 
+  scale_fill_continuous(low="white", high="dodgerblue2", name ="Distribution of Institutions by Average Earnings") + 
+  coord_map() + 
+  theme_bw() + 
+  theme(axis.title=element_blank(), 
+        axis.text=element_blank(), 
+        axis.ticks=element_blank(),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.border = element_blank(),
+        plot.title = element_text(size=14, face="bold", hjust=.5),
+        legend.position="bottom")
+
+
+###############################################################################
+# Multi linear regression
+################################################################################
+
+fit <- lm(avrg_earnings ~ inst_type + land_grant + hbcu + grad_offer + med_degree
+   + hospital + urban + suburban + town + rural + pct_f_aid + inst_size + inst_sector
+   + pct_admit, data = colleges)
+summary(fit)
