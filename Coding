@@ -20,7 +20,7 @@ library(tidyverse)
 library(RColorBrewer)
 
 
-#Opening/Merging files
+###Opening/Merging files
 
 #Creating multmerge function
 multmerge = function(mypath){
@@ -115,6 +115,16 @@ colnames(colleges) <- c("UNITID",
                           "in_state_tuition_fees_room",
                           "out_state_tuition_fees_room")
 
+# Create new dummy variables (public, nonprofit and forprofit) to label the data provided by the category variable 
+# Institutional type (CONTROL)
+
+colleges <- colleges %>%
+  mutate(public = ifelse(inst_type==1, 1, 0), nonprofit = ifelse(inst_type==2, 1, 0), forprofit = ifelse(inst_type==3, 1, 0))
+
+
+#saving new csv file with the variables we are going to work with
+write.csv(colleges,'colleges.csv')
+
 ###############################################################################
 # Getting geocode data
 ################################################################################
@@ -141,7 +151,7 @@ ggmap(usa)
 ipeds_geo <- colleges %>%
   mutate(address = paste(state, city, zip, sep = " ")) %>%
   mutate_geocode(address) %>%
-  select(inst_name, address, longitude, latitude, lon, lat, avrg_earnings, inst_type,
+  select(inst_name, address, state, longitude, latitude, lon, lat, avrg_earnings, inst_type,
          land_grant, hbcu, grad_offer, med_degree, hospital, urban, suburban, town,
          rural, avrg_net_price, pct_f_aid, n_phd_degree, n_mast_degree, n_bach_degree,
          n_assoc_degree, inst_size, inst_sector, pct_admit, tot_admit, in_state_tuition_fees,
@@ -150,6 +160,18 @@ ipeds_geo <- colleges %>%
 
 #saving new csv file with geocode data
 write.csv(ipeds_geo,'ipeds_geo.csv')
+
+#Opening geocode dataset
+ipeds_geo <- read_csv("ipeds_geo.csv") 
+
+#Create new variable
+mean_earnings_state <- colleges %>% 
+  group_by(state) %>% 
+  summarize(average_earnings_state = mean(avrg_earnings))
+
+#Merging files (mean_earnings_state)
+colleges_avr_state <- ipeds_geo %>%
+  inner_join(mean_earnings_state, by = c("state" = "state"))
 
 # We have to work on the spatial coding, I got stuck
 ggplot() + 
@@ -173,7 +195,28 @@ ggplot() +
 # Multi linear regression
 ################################################################################
 
-fit <- lm(avrg_earnings ~ inst_type + land_grant + hbcu + grad_offer + med_degree
-   + hospital + urban + suburban + town + rural + pct_f_aid + inst_size + inst_sector
-   + pct_admit, data = colleges)
-summary(fit)
+#Opening college dataset
+colleges <- read_csv("colleges.csv")
+
+#Running multilinear regression models:
+
+#1) Model 1: institutional characteristics
+model1 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
+            grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size 
+            + pct_admit, data = colleges)
+summary(model1)
+
+#1) Model 2: institutional characteristics + state characteristics
+model2 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
+             grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size 
+             + pct_admit + state, data = colleges)
+summary(model2)
+
+#1) Model 3: institutional characteristics + state characteristics + city characteristics
+model3 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
+             grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size
+             + pct_admit + state + urban + suburban + town, data = colleges)
+summary(model3)
+
+#Ploting residuals vs fitted
+plot(model3, las = 1)
