@@ -151,7 +151,7 @@ ggmap(usa)
 ipeds_geo <- colleges %>%
   mutate(address = paste(state, city, zip, sep = " ")) %>%
   mutate_geocode(address) %>%
-  select(inst_name, address, state, longitude, latitude, lon, lat, avrg_earnings, inst_type,
+  select(inst_name, address, longitude, latitude, lon, lat, avrg_earnings, inst_type,
          land_grant, hbcu, grad_offer, med_degree, hospital, urban, suburban, town,
          rural, avrg_net_price, pct_f_aid, n_phd_degree, n_mast_degree, n_bach_degree,
          n_assoc_degree, inst_size, inst_sector, pct_admit, tot_admit, in_state_tuition_fees,
@@ -161,21 +161,73 @@ ipeds_geo <- colleges %>%
 #saving new csv file with geocode data
 write.csv(ipeds_geo,'ipeds_geo.csv')
 
-#Opening geocode dataset
-ipeds_geo <- read_csv("ipeds_geo.csv") 
+###############################################################################
+# Plotting the data on maps
+################################################################################
 
-#Create new variable
+# Creating new dataset "avrg_earnings_state"
 mean_earnings_state <- colleges %>% 
   group_by(state) %>% 
   summarize(average_earnings_state = mean(avrg_earnings))
 
-#Merging files (mean_earnings_state)
-colleges_avr_state <- ipeds_geo %>%
-  inner_join(mean_earnings_state, by = c("state" = "state"))
+mean_earnings_state$state <- state.name[match(mean_earnings_state$state, state.abb)]
+
+mean_earnings_state$state[is.na(mean_earnings_state$state)] <- c("DoDEA")
+
+# Using data from the maps package to plot state differences
+states_map <- as_tibble(map_data("state"))
+states_map
+
+# Average state earnings
+
+mean_earnings_state_map <- mean_earnings_state %>%
+  mutate(state = tolower(state)) %>%
+  rename(region = state) %>%
+  full_join(states_map)  %>%
+  arrange(group, order)
+mean_earnings_state_map
+
+ggplot(mean_earnings_state_map, aes(x = long, y = lat, group = group, fill = average_earnings_state)) +
+  geom_polygon(color = "black") +
+  coord_map("polyconic")
+
+# Creating new dataset "mean_cost_state"
+
+colSums(is.na(colleges))
+clean_cost <- colleges[!is.na(colleges$in_state_tuition),]
+head(clean_cost) 
+
+mean_cost_state <- clean_cost %>% 
+  group_by(state) %>% 
+  summarize(mean_cost_state = mean(in_state_tuition))
+
+mean_cost_state$state <- state.name[match(mean_cost_state$state, state.abb)]
+
+mean_cost_state$state[is.na(mean_cost_state$state)] <- c("DoDEA")
+
+# Using data from the maps package to plot state differences
+states_map <- as_tibble(map_data("state"))
+states_map
+
+# Average state cost
+
+mean_cost_state_map <- mean_cost_state %>%
+  mutate(state = tolower(state)) %>%
+  rename(region = state) %>%
+  full_join(states_map)  %>%
+  arrange(group, order)
+mean_cost_state_map
+
+ggplot(mean_cost_state_map, aes(x = long, y = lat, group = group, fill = mean_cost_state)) +
+  geom_polygon(color = "black") +
+  coord_map("polyconic")
+
+# Opening geocode dataset
+ipeds_geo <- read_csv("ipeds_geo.csv") 
 
 # We have to work on the spatial coding, I got stuck
 ggplot() + 
-  geom_polygon(data = ipeds_geo, aes(x=lon, y=lat, group=group, fill=avrg_earnings), 
+ geom_polygon(data = ipeds_geo, aes(x=lon, y=lat, group=group, fill=avrg_earnings), 
                col="white", size=0.2, alpha=.5) + 
   geom_path(data = ipeds_geo,  aes(x=lon, y=lat, group=group), colour = "gray15", size=.3) + 
   scale_fill_continuous(low="white", high="dodgerblue2", name ="Distribution of Institutions by Average Earnings") + 
@@ -206,17 +258,23 @@ model1 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu +
             + pct_admit, data = colleges)
 summary(model1)
 
-#1) Model 2: institutional characteristics + state characteristics
+#2) Model 2: institutional characteristics + state characteristics
 model2 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
              grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size 
              + pct_admit + state, data = colleges)
 summary(model2)
 
-#1) Model 3: institutional characteristics + state characteristics + city characteristics
+#3) Model 3: institutional characteristics + state characteristics + city characteristics
 model3 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
              grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size
              + pct_admit + state + urban + suburban + town, data = colleges)
 summary(model3)
+
+install.packages("stargazer")
+library(stargazer)
+
+stargazer(model3, "Preferred regression mode", type = "text")
+output <- stargazer(model1, model2, model3, type="text", out = "model.html")
 
 #Ploting residuals vs fitted
 plot(model3, las = 1)
