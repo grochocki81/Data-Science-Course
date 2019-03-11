@@ -121,6 +121,13 @@ colnames(colleges) <- c("UNITID",
 colleges <- colleges %>%
   mutate(public = ifelse(inst_type==1, 1, 0), nonprofit = ifelse(inst_type==2, 1, 0), forprofit = ifelse(inst_type==3, 1, 0))
 
+# Create new dummy variables (<1000, 1000-4999, 5000-9999, 10000-19999, >20000) to label the data provided by the category variable 
+# Institution size (INSTSIZE)
+
+colleges <- colleges %>%
+  mutate("size_1000_4999" = ifelse(inst_size==2, 1, 0), "size_5000_9999" = ifelse(inst_size==3, 1, 0),
+         "size_10000_19999" = ifelse(inst_size==4, 1, 0), "size_over_20000" = ifelse(inst_size==5, 1, 0))
+
 
 #saving new csv file with the variables we are going to work with
 write.csv(colleges,'colleges.csv')
@@ -165,14 +172,19 @@ write.csv(ipeds_geo,'ipeds_geo.csv')
 # Plotting the data on maps
 ################################################################################
 
+#############################################
 # Creating new dataset "avrg_earnings_state"
-mean_earnings_state <- colleges %>% 
+############################################
+
+# Calculating average earnings per state
+avrg_earnings_state <- colleges %>% 
   group_by(state) %>% 
   summarize(average_earnings_state = mean(avrg_earnings))
 
-mean_earnings_state$state <- state.name[match(mean_earnings_state$state, state.abb)]
+# Changing from state abreviations to state names to match 
+avrg_earnings_state$state <- state.name[match(avrg_earnings_state$state, state.abb)]
 
-mean_earnings_state$state[is.na(mean_earnings_state$state)] <- c("DoDEA")
+avrg_earnings_state$state[is.na(avrg_earnings_state$state)] <- c("DoDEA")
 
 # Using data from the maps package to plot state differences
 states_map <- as_tibble(map_data("state"))
@@ -180,30 +192,39 @@ states_map
 
 # Average state earnings
 
-mean_earnings_state_map <- mean_earnings_state %>%
+avrg_earnings_state_map <- avrg_earnings_state %>%
   mutate(state = tolower(state)) %>%
   rename(region = state) %>%
   full_join(states_map)  %>%
   arrange(group, order)
-mean_earnings_state_map
+avrg_earnings_state_map
 
-ggplot(mean_earnings_state_map, aes(x = long, y = lat, group = group, fill = average_earnings_state)) +
+ggplot(avrg_earnings_state_map, aes(x = long, y = lat, group = group, fill = average_earnings_state)) +
   geom_polygon(color = "black") +
-  coord_map("polyconic")
+  coord_map("polyconic") +
+  scale_fill_gradient(
+    low = "red",
+    high = "green"
+  )
 
-# Creating new dataset "mean_cost_state"
+#############################################
+# Creating new dataset "avrg_cost_state"
+############################################
 
+# Cleaning the variable "in_state_tuition" to calculate the mean tuition cost per state
 colSums(is.na(colleges))
 clean_cost <- colleges[!is.na(colleges$in_state_tuition),]
 head(clean_cost) 
 
-mean_cost_state <- clean_cost %>% 
+# Calculating average earnings per state
+avrg_cost_state <- clean_cost %>% 
   group_by(state) %>% 
-  summarize(mean_cost_state = mean(in_state_tuition))
+  summarize(avrg_cost_state = mean(in_state_tuition))
 
-mean_cost_state$state <- state.name[match(mean_cost_state$state, state.abb)]
+# Changing from state abreviations to state names to match 
+avrg_cost_state$state <- state.name[match(avrg_cost_state$state, state.abb)]
 
-mean_cost_state$state[is.na(mean_cost_state$state)] <- c("DoDEA")
+avrg_cost_state$state[is.na(avrg_cost_state$state)] <- c("DoDEA")
 
 # Using data from the maps package to plot state differences
 states_map <- as_tibble(map_data("state"))
@@ -211,16 +232,20 @@ states_map
 
 # Average state cost
 
-mean_cost_state_map <- mean_cost_state %>%
+avrg_cost_state_map <- avrg_cost_state %>%
   mutate(state = tolower(state)) %>%
   rename(region = state) %>%
   full_join(states_map)  %>%
   arrange(group, order)
-mean_cost_state_map
+avrg_cost_state_map
 
-ggplot(mean_cost_state_map, aes(x = long, y = lat, group = group, fill = mean_cost_state)) +
+ggplot(avrg_cost_state_map, aes(x = long, y = lat, group = group, fill = avrg_cost_state)) +
   geom_polygon(color = "black") +
-  coord_map("polyconic")
+  coord_map("polyconic") +
+  scale_fill_gradient(
+    low = "red",
+    high = "green", name="Mean Earnings"
+  )
 
 # Opening geocode dataset
 ipeds_geo <- read_csv("ipeds_geo.csv") 
@@ -242,6 +267,77 @@ ggplot() +
         plot.title = element_text(size=14, face="bold", hjust=.5),
         legend.position="bottom")
 
+#Maps by higher education institutions
+
+#Map 1 (average earnings)
+
+ipeds_geo <- read_csv("ipeds_geo.csv") 
+head(ipeds_geo)
+
+#subset of top earning universities
+ipeds_subset1 <- subset(ipeds_geo, ipeds_geo$avrg_earnings > 45000)
+ipeds_subset
+
+#subset of lowest earning universities
+ipeds_subset2 <- subset(ipeds_geo, ipeds_geo$avrg_earnings < 30000)
+ipeds_subset2
+
+#subset of universities in the middle
+ipeds_subset3 <- subset(ipeds_geo, ipeds_geo$avrg_earnings > 30000 & ipeds_geo$avrg_earnings < 45000)
+ipeds_subset3
+
+
+usa <- get_map(location = "united states", zoom = 4, maptype = "terrain",
+               source = "google", color = "color")
+
+ggmap(usa)
+
+ggmap(usa) + geom_jitter(data = ipeds_subset1, aes(x = lon, y = lat), 
+                         color = "maroon", size = 2, height = 0.2, 
+                         width = 0.2)
+
+ggmap(usa) + geom_jitter(data = ipeds_subset2, aes(x = lon, y = lat), 
+                         color = "navy", size = 2, height = 0.2, 
+                         width = 0.2)
+
+ggmap(usa) +  
+  geom_jitter(data = ipeds_subset3, aes(x = lon, y = lat), 
+              color = "orange", size = 1, height = 0.2, 
+              width = 0.2) +
+  geom_jitter(data = ipeds_subset1, aes(x = lon, y = lat), 
+              color = "maroon", size = 1, height = 0.2, 
+              width = 0.2) + 
+  geom_jitter(data = ipeds_subset2, aes(x = lon, y = lat), 
+              color = "navy", size = 1, height = 0.2, 
+              width = 0.2) 
+
+#Map 2 (tuition distribution)
+
+ipeds_geo <- read_csv("ipeds_geo.csv") 
+summary(ipeds_geo$in_state_tuition)
+
+#subset of lowest charging universities
+ipeds_subset4 <- subset(ipeds_geo, ipeds_geo$in_state_tuition < 15000)
+ipeds_subset4
+
+#subset of highest charging universities
+ipeds_subset5 <- subset(ipeds_geo, ipeds_geo$in_state_tuition > 35000)
+ipeds_subset5
+
+#subset of universities in the middle
+ipeds_subset6 <- subset(ipeds_geo, ipeds_geo$in_state_tuition > 15000 & ipeds_geo$in_state_tuition < 35000)
+ipeds_subset6
+
+ggmap(usa) +  
+  geom_jitter(data = ipeds_subset6, aes(x = lon, y = lat), 
+              color = "yellow", size = 1, height = 0.2, 
+              width = 0.2) +
+  geom_jitter(data = ipeds_subset4, aes(x = lon, y = lat), 
+              color = "green", size = 1, height = 0.2, 
+              width = 0.2) + 
+  geom_jitter(data = ipeds_subset5, aes(x = lon, y = lat), 
+              color = "red", size = 1, height = 0.2, 
+              width = 0.2) 
 
 ###############################################################################
 # Multi linear regression
@@ -278,3 +374,9 @@ output <- stargazer(model1, model2, model3, type="text", out = "model.html")
 
 #Ploting residuals vs fitted
 plot(model3, las = 1)
+
+
+stargazer(model1, title="Regression Results", type="text", align=TRUE, 
+          dep.var.labels=c("Average Earnings By University"), 
+          covariate.labels=c("In State Tuition","Nonprofit Status", "Land Grant Institution","Historically Black Institution","Graduate Offering"), 
+          no.space=TRUE)
