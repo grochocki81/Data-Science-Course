@@ -247,26 +247,6 @@ ggplot(avrg_cost_state_map, aes(x = long, y = lat, group = group, fill = avrg_co
     high = "green", name="Mean Earnings"
   )
 
-# Opening geocode dataset
-ipeds_geo <- read_csv("ipeds_geo.csv") 
-
-# We have to work on the spatial coding, I got stuck
-ggplot() + 
- geom_polygon(data = ipeds_geo, aes(x=lon, y=lat, group=group, fill=avrg_earnings), 
-               col="white", size=0.2, alpha=.5) + 
-  geom_path(data = ipeds_geo,  aes(x=lon, y=lat, group=group), colour = "gray15", size=.3) + 
-  scale_fill_continuous(low="white", high="dodgerblue2", name ="Distribution of Institutions by Average Earnings") + 
-  coord_map() + 
-  theme_bw() + 
-  theme(axis.title=element_blank(), 
-        axis.text=element_blank(), 
-        axis.ticks=element_blank(),
-        panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        panel.border = element_blank(),
-        plot.title = element_text(size=14, face="bold", hjust=.5),
-        legend.position="bottom")
-
 #Maps by higher education institutions
 
 #Map 1 (average earnings)
@@ -333,7 +313,7 @@ ggmap(usa) +
               color = "yellow", size = 1, height = 0.2, 
               width = 0.2) +
   geom_jitter(data = ipeds_subset4, aes(x = lon, y = lat), 
-              color = "green", size = 1, height = 0.2, 
+              color = "blue", size = 1, height = 0.2, 
               width = 0.2) + 
   geom_jitter(data = ipeds_subset5, aes(x = lon, y = lat), 
               color = "red", size = 1, height = 0.2, 
@@ -343,28 +323,36 @@ ggmap(usa) +
 # Multi linear regression
 ################################################################################
 
+install.packages("plm")
+library(plm)
+
 #Opening college dataset
 colleges <- read_csv("colleges.csv")
 
 #Running multilinear regression models:
 
-#1) Model 1: institutional characteristics
-model1 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
-            grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size 
-            + pct_admit, data = colleges)
+#1) Model 1: avrg_earnings/in_state_tuition
+
+model1 <- lm(avrg_earnings ~ in_state_tuition, data = colleges)
 summary(model1)
 
-#2) Model 2: institutional characteristics + state characteristics
-model2 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
-             grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size 
-             + pct_admit + state, data = colleges)
+#2) Model 2: institutional characteristics + city characteristics
+
+model2 <- lm(avrg_earnings ~ in_state_tuition + public +
+                  nonprofit + land_grant + hbcu + hospital +  pct_admit + urban + suburban + 
+                  town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
+                  size_over_20000, data = colleges)
 summary(model2)
 
-#3) Model 3: institutional characteristics + state characteristics + city characteristics
-model3 <- lm(avrg_earnings ~ in_state_tuition + nonprofit + land_grant + hbcu + 
-             grad_offer + med_degree + hospital + avrg_net_price + pct_f_aid + inst_size
-             + pct_admit + state + urban + suburban + town, data = colleges)
+#3) Model 3: institutional characteristics + city characteristics + state fixed effects
+model3 <- lm(avrg_earnings ~ in_state_tuition + public +
+                  nonprofit + land_grant + hbcu + hospital + pct_admit + urban + suburban + 
+                  town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
+                  size_over_20000 + as.factor(state), data = colleges)
 summary(model3)
+
+
+# Create regression table
 
 install.packages("stargazer")
 library(stargazer)
@@ -372,11 +360,28 @@ library(stargazer)
 stargazer(model3, "Preferred regression mode", type = "text")
 output <- stargazer(model1, model2, model3, type="text", out = "model.html")
 
+stargazer(model1, model2, model3, title="Regression Results", 
+          type="text", digits=2, align=TRUE, 
+          dep.var.labels=c("Average Earnings By University"),
+          covariate.labels=c("In-State Tuition", "Public status", 
+                             "Nonprofit status", "Land grant institution",
+                             "Historically Black inst.", "Has hospital", "% admitted", 
+                             "Location: urban", "Location: suburban", "Location: town", 
+                             "Offers grad. prgm.", "Offers med. deg.", "Size: 1k-5k", "Size: 5k-10k",
+                             "Size: 10k-20k", "Size: 20k+"),
+          add.lines=list(c("State fixed effects",
+                           c(rep("No", 2), rep("Yes", 3)))))
+
+capture.output({
+  stargazer(all.models, type="latex", 
+            out=file.path(PROJHOME, "Output", "tables", "1-internal-models-all.tex"),
+            covariate.labels=coef.labs,
+            dep.var.caption="Civil society regulatory environment (CSRE) in following year",
+            dep.var.labels.include=FALSE,
+            column.labels=names(all.models),
+            omit="factor\\(year", no.space=TRUE,
+            add.lines=extra.lines)
+}, file="/dev/null")
+
 #Ploting residuals vs fitted
 plot(model3, las = 1)
-
-
-stargazer(model1, title="Regression Results", type="text", align=TRUE, 
-          dep.var.labels=c("Average Earnings By University"), 
-          covariate.labels=c("In State Tuition","Nonprofit Status", "Land Grant Institution","Historically Black Institution","Graduate Offering"), 
-          no.space=TRUE)
