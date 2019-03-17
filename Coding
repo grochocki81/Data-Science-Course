@@ -172,9 +172,9 @@ write.csv(ipeds_geo,'ipeds_geo.csv')
 # Plotting the data on maps
 ################################################################################
 
-#############################################
-# Creating new dataset "avrg_earnings_state"
-############################################
+#####################################################
+# Creating new dataset "avrg_earnings_state" (MAP 1)
+#####################################################
 
 # Calculating average earnings per state
 avrg_earnings_state <- colleges %>% 
@@ -190,7 +190,7 @@ avrg_earnings_state$state[is.na(avrg_earnings_state$state)] <- c("DoDEA")
 states_map <- as_tibble(map_data("state"))
 states_map
 
-# Average state earnings
+# Map 1 - Average state earnings
 
 avrg_earnings_state_map <- avrg_earnings_state %>%
   mutate(state = tolower(state)) %>%
@@ -204,11 +204,11 @@ ggplot(avrg_earnings_state_map, aes(x = long, y = lat, group = group, fill = ave
   coord_map("polyconic") +
   scale_fill_gradient(
     low = "red",
-    high = "green"
+    high = "green", name="Mean Earnings"
   )
 
 #############################################
-# Creating new dataset "avrg_cost_state"
+# Creating new dataset "avrg_cost_state" (MAP 2)
 ############################################
 
 # Cleaning the variable "in_state_tuition" to calculate the mean tuition cost per state
@@ -230,7 +230,7 @@ avrg_cost_state$state[is.na(avrg_cost_state$state)] <- c("DoDEA")
 states_map <- as_tibble(map_data("state"))
 states_map
 
-# Average state cost
+# Map 2 - Average state cost
 
 avrg_cost_state_map <- avrg_cost_state %>%
   mutate(state = tolower(state)) %>%
@@ -244,12 +244,14 @@ ggplot(avrg_cost_state_map, aes(x = long, y = lat, group = group, fill = avrg_co
   coord_map("polyconic") +
   scale_fill_gradient(
     low = "red",
-    high = "green", name="Mean Earnings"
+    high = "green", name="Average Cost"
   )
 
+#############################################
 #Maps by higher education institutions
+#############################################
 
-#Map 1 (average earnings)
+#Map 3 (average earnings)
 
 ipeds_geo <- read_csv("ipeds_geo.csv") 
 head(ipeds_geo)
@@ -266,20 +268,6 @@ ipeds_subset2
 ipeds_subset3 <- subset(ipeds_geo, ipeds_geo$avrg_earnings > 30000 & ipeds_geo$avrg_earnings < 45000)
 ipeds_subset3
 
-
-usa <- get_map(location = "united states", zoom = 4, maptype = "terrain",
-               source = "google", color = "color")
-
-ggmap(usa)
-
-ggmap(usa) + geom_jitter(data = ipeds_subset1, aes(x = lon, y = lat), 
-                         color = "maroon", size = 2, height = 0.2, 
-                         width = 0.2)
-
-ggmap(usa) + geom_jitter(data = ipeds_subset2, aes(x = lon, y = lat), 
-                         color = "navy", size = 2, height = 0.2, 
-                         width = 0.2)
-
 ggmap(usa) +  
   geom_jitter(data = ipeds_subset3, aes(x = lon, y = lat), 
               color = "orange", size = 1, height = 0.2, 
@@ -291,7 +279,7 @@ ggmap(usa) +
               color = "navy", size = 1, height = 0.2, 
               width = 0.2) 
 
-#Map 2 (tuition distribution)
+#Map 4 (tuition distribution)
 
 ipeds_geo <- read_csv("ipeds_geo.csv") 
 summary(ipeds_geo$in_state_tuition)
@@ -319,48 +307,151 @@ ggmap(usa) +
               color = "red", size = 1, height = 0.2, 
               width = 0.2) 
 
+################################################################################
+# K means clustering
+################################################################################
+
+# Opening college dataset
+colleges <- read_csv("colleges.csv")
+
+library(cluster)   
+library(factoextra)
+library(fpc)
+
+# Selecting columns of the dataframe
+
+select_colleges <- select(colleges, -c(X1, inst_name, zip, state, city, 
+                                              street, latitude, longitude, inst_type, n_phd_degree, n_mast_degree,
+                                              n_bach_degree, n_assoc_degree, inst_size, inst_sector,
+                                              tot_admit, out_state_tuition_fees, in_state_tuition, out_state_tuition,
+                                              tuition_plans, in_state_tuition_fees_room, out_state_tuition_fees_room, avrg_net_price))
+
+# Checking for single institutions
+nrow(select_colleges) == length(unique(select_colleges$UNITID))
+
+# Checking for NAs
+colSums(is.na(select_colleges))
+
+# Dropping N/A rows
+clean_colleges <- select_colleges[!is.na(select_colleges$UNITID),] %>%
+  na.omit()
+head(clean_colleges) 
+
+sum(sapply(clean_colleges, is.na))
+
+sum(sapply(clean_colleges, is.infinite))
+
+sum(sapply(clean_colleges, is.nan))
+
+# Drop university id from the data frame
+
+k_means_colleges <- select(clean_colleges, -c(UNITID))
+
+# Deciding on the number of clusters
+fviz_nbclust(k_means_colleges, kmeans, method = "wss") # 5 clusters seem to be the ideal number 
+
+# Breaking into 5 clusters
+set.seed(1234)
+colleges_cluster <- kmeans(k_means_colleges, 5, nstart = 25)
+
+# Plotting and looking at the clusters
+
+plotcluster(k_means_colleges, colleges_cluster$cluster)
+
+colleges_cluster$centers
+
+write_csv(as.data.frame(colleges_cluster$centers), "kmeans_colleges.csv")
+
 ###############################################################################
 # Multi linear regression
 ################################################################################
 
-install.packages("plm")
 library(plm)
 
 #Opening college dataset
 colleges <- read_csv("colleges.csv")
 
-#Running multilinear regression models:
+# Breaking the dataset into a "training" and "test" datasets
 
-#1) Model 1: avrg_earnings/in_state_tuition
+set.seed(1234)
+train <- sample_frac(colleges, 0.8)
+test <- filter(colleges, !colleges$UNITID %in% 
+                 train$UNITID)
 
-model1 <- lm(avrg_earnings ~ in_state_tuition, data = colleges)
+# Running the models for the train dataset
+
+# 1) Model 1: avrg_earnings/in_state_tuition
+
+model1 <- lm(avrg_earnings ~ in_state_tuition, data = train)
 summary(model1)
 
-#2) Model 2: institutional characteristics + city characteristics
+# 2) Model 2: institutional characteristics + city characteristics
 
 model2 <- lm(avrg_earnings ~ in_state_tuition + public +
+               nonprofit + land_grant + hbcu + hospital +  pct_admit + urban + suburban + 
+               town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
+               size_over_20000, data = train)
+summary(model2)
+
+# 3) Model 3: institutional characteristics + city characteristics + state fixed effects
+model3 <- lm(avrg_earnings ~ in_state_tuition + public +
+               nonprofit + land_grant + hbcu + hospital + pct_admit + urban + suburban + 
+               town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
+               size_over_20000 + as.factor(state), data = train)
+summary(model3)
+
+# Running the models for the test dataset
+
+# 1) Model 4: avrg_earnings/in_state_tuition
+
+model4 <- lm(avrg_earnings ~ in_state_tuition, data = test)
+summary(model4)
+
+# 2) Model 5: institutional characteristics + city characteristics
+
+model5 <- lm(avrg_earnings ~ in_state_tuition + public +
+               nonprofit + land_grant + hbcu + hospital +  pct_admit + urban + suburban + 
+               town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
+               size_over_20000, data = test)
+summary(model5)
+
+# 3) Model 6: institutional characteristics + city characteristics + state fixed effects
+model6 <- lm(avrg_earnings ~ in_state_tuition + public +
+               nonprofit + land_grant + hbcu + hospital + pct_admit + urban + suburban + 
+               town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
+               size_over_20000 + as.factor(state), data = test)
+summary(model6)
+
+#Running multilinear regression models (full dataset):
+
+#1) Model 7: avrg_earnings/in_state_tuition
+
+model7 <- lm(avrg_earnings ~ in_state_tuition, data = colleges)
+summary(model7)
+
+#2) Model 8: institutional characteristics + city characteristics
+
+model8 <- lm(avrg_earnings ~ in_state_tuition + public +
                   nonprofit + land_grant + hbcu + hospital +  pct_admit + urban + suburban + 
                   town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
                   size_over_20000, data = colleges)
-summary(model2)
+summary(model8)
 
-#3) Model 3: institutional characteristics + city characteristics + state fixed effects
-model3 <- lm(avrg_earnings ~ in_state_tuition + public +
+#3) Model 9: institutional characteristics + city characteristics + state fixed effects
+model9 <- lm(avrg_earnings ~ in_state_tuition + public +
                   nonprofit + land_grant + hbcu + hospital + pct_admit + urban + suburban + 
                   town + grad_offer + med_degree + size_1000_4999 + size_5000_9999 + size_10000_19999 + 
                   size_over_20000 + as.factor(state), data = colleges)
-summary(model3)
-
+summary(model9)
 
 # Create regression table
 
-install.packages("stargazer")
 library(stargazer)
 
-stargazer(model3, "Preferred regression mode", type = "text")
-output <- stargazer(model1, model2, model3, type="text", out = "model.html")
+stargazer(model9, "Preferred regression mode", type = "text")
+output <- stargazer(model7, model8, model9, type="text", out = "model.html")
 
-stargazer(model1, model2, model3, title="Regression Results", 
+stargazer(model7, model8, model9, title="Regression Results", 
           type="text", digits=2, align=TRUE, 
           dep.var.labels=c("Average Earnings By University"),
           covariate.labels=c("In-State Tuition", "Public status", 
@@ -372,16 +463,6 @@ stargazer(model1, model2, model3, title="Regression Results",
           add.lines=list(c("State fixed effects",
                            c(rep("No", 2), rep("Yes", 3)))))
 
-capture.output({
-  stargazer(all.models, type="latex", 
-            out=file.path(PROJHOME, "Output", "tables", "1-internal-models-all.tex"),
-            covariate.labels=coef.labs,
-            dep.var.caption="Civil society regulatory environment (CSRE) in following year",
-            dep.var.labels.include=FALSE,
-            column.labels=names(all.models),
-            omit="factor\\(year", no.space=TRUE,
-            add.lines=extra.lines)
-}, file="/dev/null")
 
 #Ploting residuals vs fitted
-plot(model3, las = 1)
+plot(model9, las = 1)
